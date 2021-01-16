@@ -1,0 +1,7 @@
+## file ~/my_aws_project/playbooks/deploy.yml
+---
+- name: Deploy my infrastructure
+  hosts: localhost
+  roles:
+
+    - ec2_instances_dep

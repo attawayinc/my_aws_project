@@ -1,0 +1,31 @@
+---
+# tasks file for ec2_instances_dep
+## ~/my_aws_project/roles/ec2_instances_dep/tasks/main.yml
+- name: I create a directory to store my Terraform config
+  file:
+    path: "~/aws_terraform"
+    state: directory
+    recurse: yes
+
+- name: I copy my Terraform template into the working directory create above
+  template:
+    src: "my_ec2_infra.tf"
+    dest: "~/aws_terraform/my_ec2_infra.tf"
+
+- name: I deploy my configuration into AWS from Ansible
+  terraform:
+    project_path: "~/aws_terraform"
+    force_init: true
+    state: "present"
+  register: r_aws
+
+- name: I do whatever I need to do in my EC2 infrastructure
+  terraform:
+    project_path: "~/aws_terraform"
+    state: "update"
+  debug: msg="update, install, create user, start services, etc"
+
+- name: I destroy my AWS infrastructure 
+  terraform:
+    project_path: "~/aws_terraform"
+    state: "absent"
