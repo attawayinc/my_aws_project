@@ -274,16 +274,18 @@ class Ec2Inventory(object):
 
         # Make sure that profile_name is not passed at all if not set
         # as pre 2.24 boto will fall over otherwise
-        if self.boto_profile:
-            if not hasattr(boto.ec2.EC2Connection, 'profile_name'):
-                self.fail_with_error("boto version must be >= 2.24 to use profile")
+        if self.boto_profile and not hasattr(
+            boto.ec2.EC2Connection, 'profile_name'
+        ):
+            self.fail_with_error("boto version must be >= 2.24 to use profile")
 
         # Cache
-        if self.args.refresh_cache:
+        if (
+            self.args.refresh_cache
+            or not self.args.refresh_cache
+            and not self.is_cache_valid()
+        ):
             self.do_api_calls_update_cache()
-        elif not self.is_cache_valid():
-            self.do_api_calls_update_cache()
-
         # Data to print
         if self.args.host:
             data_to_print = self.get_host_info()
@@ -303,9 +305,10 @@ class Ec2Inventory(object):
         if os.path.isfile(self.cache_path_cache):
             mod_time = os.path.getmtime(self.cache_path_cache)
             current_time = time()
-            if (mod_time + self.cache_max_age) > current_time:
-                if os.path.isfile(self.cache_path_index):
-                    return True
+            if (mod_time + self.cache_max_age) > current_time and os.path.isfile(
+                self.cache_path_index
+            ):
+                return True
 
         return False
 
@@ -716,7 +719,7 @@ class Ec2Inventory(object):
                 error = "RDS hasn't been enabled for this account yet. " \
                     "You must either log in to the RDS service through the AWS console to enable it, " \
                     "or set 'rds = False' in ec2.ini"
-            elif not e.reason == "Forbidden":
+            elif e.reason != "Forbidden":
                 error = "Looks like AWS RDS is down:\n%s" % e.message
             self.fail_with_error(error, 'getting RDS instances')
 
@@ -736,11 +739,7 @@ class Ec2Inventory(object):
         account_id = boto.connect_iam().get_user().arn.split(':')[4]
         c_dict = {}
         for c in clusters:
-            if not self.ec2_instance_filters:
-                matches_filter = True
-            else:
-                matches_filter = False
-
+            matches_filter = not self.ec2_instance_filters
             try:
                 # arn:aws:rds:<region>:<account number>:<resourcetype>:<name>
                 tags = client.list_tags_for_resource(
@@ -799,7 +798,10 @@ class Ec2Inventory(object):
                         # Boto also doesn't provide wrapper classes to CacheClusters or
                         # CacheNodes. Because of that we can't make use of the get_list
                         # method in the AWSQueryConnection. Let's do the work manually
-                        clusters = clusters + response['DescribeCacheClustersResponse']['DescribeCacheClustersResult']['CacheClusters']
+                        clusters += response['DescribeCacheClustersResponse'][
+                            'DescribeCacheClustersResult'
+                        ]['CacheClusters']
+
                     except KeyError as e:
                         error = "ElastiCache query to AWS failed (unexpected format)."
                         self.fail_with_error(error, 'getting ElastiCache clusters')
@@ -812,7 +814,7 @@ class Ec2Inventory(object):
                 error = "ElastiCache hasn't been enabled for this account yet. " \
                     "You must either log in to the ElastiCache service through the AWS console to enable it, " \
                     "or set 'elasticache = False' in ec2.ini"
-            elif not e.reason == "Forbidden":
+            elif e.reason != "Forbidden":
                 error = "Looks like AWS ElastiCache is down:\n%s" % e.message
             self.fail_with_error(error, 'getting ElastiCache clusters')
 
@@ -836,7 +838,7 @@ class Ec2Inventory(object):
 
             if e.error_code == 'AuthFailure':
                 error = self.get_auth_error_message()
-            if not e.reason == "Forbidden":
+            if e.reason != "Forbidden":
                 error = "Looks like AWS ElastiCache [Replication Groups] is down:\n%s" % e.message
             self.fail_with_error(error, 'getting ElastiCache clusters')
 
@@ -863,7 +865,7 @@ class Ec2Inventory(object):
 
         boto_paths = ['/etc/boto.cfg', '~/.boto', '~/.aws/credentials']
         boto_config_found = [p for p in boto_paths if os.path.isfile(os.path.expanduser(p))]
-        if len(boto_config_found) > 0:
+        if boto_config_found:
             errors.append(" - Boto configs found at '%s', but the credentials contained may not be correct" % ', '.join(boto_config_found))
         else:
             errors.append(" - No Boto config found at any expected location '%s'" % ', '.join(boto_paths))
@@ -1051,10 +1053,7 @@ class Ec2Inventory(object):
                     values = [v]
 
                 for v in values:
-                    if v:
-                        key = self.to_safe("tag_" + k + "=" + v)
-                    else:
-                        key = self.to_safe("tag_" + k)
+                    key = self.to_safe("tag_" + k + "=" + v) if v else self.to_safe("tag_" + k)
                     self.push(self.inventory, key, hostname)
                     if self.nested_groups:
                         self.push_group(self.inventory, 'tags', self.to_safe("tag_" + k))
